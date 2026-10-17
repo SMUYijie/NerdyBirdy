@@ -74,3 +74,6 @@ One line per decision or deviation from docs/SPEC.md.
 - vercel.json also pins functions to `sin1` (matches the Supabase region), in addition to the dashboard setting.
 - Added basic security headers (nosniff, DENY framing, strict referrer, no camera/mic/geo) in next.config.ts.
 - Known, accepted: RLS lets a user write their own topics/attempts/questions directly from the browser. That can only change their own progress, and answer keys stay unreachable (question_keys has no grants).
+
+## Fixes
+- PDF upload: pdfjs-dist 6.x's default build uses brand-new JS APIs (Uint8Array.prototype.toHex, Map.prototype.getOrInsertComputed, Math.sumPrecise) that current Chrome/V8 lacks, so opening any PDF failed. We now import `pdfjs-dist/legacy/build/pdf.mjs` and serve the legacy worker (includes polyfills). PDF errors now say whether the file is password-protected, invalid, or unreadable in this browser.

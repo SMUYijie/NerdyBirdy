@@ -10,7 +10,9 @@ export async function extractPdfPages(
   file: File,
   onProgress?: (done: number, total: number) => void,
 ): Promise<PageText[]> {
-  const pdfjs = await import("pdfjs-dist");
+  // The legacy build includes polyfills: the modern build uses very new JS
+  // APIs (e.g. Uint8Array.prototype.toHex) that many browsers don't have yet.
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // Copied from node_modules into /public by the predev/prebuild scripts.
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -18,9 +20,17 @@ export async function extractPdfPages(
   let doc;
   try {
     doc = await task.promise;
-  } catch {
+  } catch (err) {
     await task.destroy();
-    throw new PdfError("We couldn't open that PDF. Is it password-protected or damaged?");
+    const name = err instanceof Error ? err.name : "";
+    console.warn("[pdf] open failed:", name); // error type only, never content
+    if (name === "PasswordException") {
+      throw new PdfError("This PDF is password-protected. Remove the password and try again.");
+    }
+    if (name === "InvalidPDFException") {
+      throw new PdfError("That file doesn't look like a valid PDF. Try exporting it again.");
+    }
+    throw new PdfError("Your browser couldn't read that PDF. Try a different browser or re-export the PDF.");
   }
 
   try {
