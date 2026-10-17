@@ -176,7 +176,6 @@ export async function finalizeCourse(
     user: topicMapUserPrompt(notes),
     schema: topicMapSchema(course.page_count),
     temperature: 0,
-    reasoningLow: true,
     name: "topic_map",
   });
 

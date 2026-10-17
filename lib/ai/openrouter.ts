@@ -10,7 +10,9 @@ const EMBED_BATCH = 64;
 // Only route prompts to providers that support every parameter we send and
 // that don't collect data. Never remove data_collection silently: if no
 // provider is left, callers get an LLMError with code "no_provider".
-const PROVIDER = { require_parameters: true, data_collection: "deny" } as const;
+// sort: "throughput" prefers the fastest providers (provider speed varies a
+// lot for reasoning models; see docs/DECISIONS.md).
+const PROVIDER = { require_parameters: true, data_collection: "deny", sort: "throughput" } as const;
 
 export class LLMError extends Error {
   constructor(
@@ -71,8 +73,11 @@ type CallJSONOptions<T extends z.ZodType> = {
   user: string;
   schema: T;
   temperature: number;
-  /** Ask for low reasoning effort (verification, topic maps). Dropped if unsupported. */
-  reasoningLow?: boolean;
+  /**
+   * Reasoning effort for reasoning models. Defaults to "low" to keep calls
+   * fast; dropped automatically if the model/provider doesn't support it.
+   */
+  reasoning?: "low" | "medium" | "high";
   /** Name for the json_schema response format. */
   name?: string;
   maxTokens?: number;
@@ -84,10 +89,10 @@ export async function callJSON<T extends z.ZodType>(
   opts: CallJSONOptions<T>,
 ): Promise<z.infer<T>> {
   const jsonSchema = toJSONSchemaForLLM(opts.schema);
-  const cacheKey = `${opts.model}|${opts.reasoningLow ? "r" : "-"}`;
+  const cacheKey = opts.model;
 
   const ladder: Variant[] = [
-    ...(opts.reasoningLow ? [{ mode: "json_schema", reasoning: true } as const] : []),
+    { mode: "json_schema", reasoning: true },
     { mode: "json_schema", reasoning: false },
     { mode: "json_object", reasoning: false },
   ];
@@ -139,6 +144,8 @@ export async function callJSON<T extends z.ZodType>(
   });
   const second = parseAndValidate(raw2, opts.schema);
   if (second.ok) return second.data;
+  // Validation messages name paths and constraints only, never content.
+  console.warn(`[callJSON:${opts.name ?? "response"}] invalid output twice:`, second.error.slice(0, 500));
   throw new LLMError("invalid_output", "The model returned invalid JSON twice.");
 }
 
@@ -162,7 +169,7 @@ async function complete<T extends z.ZodType>(
         : { type: "json_object" },
     // OpenRouter-specific fields; the SDK passes them through.
     provider: PROVIDER,
-    ...(variant.reasoning ? { reasoning: { effort: "low", exclude: true } } : {}),
+    ...(variant.reasoning ? { reasoning: { effort: opts.reasoning ?? "low", exclude: true } } : {}),
   };
   const res = await getClient().chat.completions.create(
     body as unknown as ChatCompletionCreateParamsNonStreaming,
@@ -227,7 +234,9 @@ function toLLMError(err: unknown): LLMError {
     );
   }
   if (err instanceof APIError) {
-    return new LLMError("upstream", `OpenRouter request failed (HTTP ${err.status ?? "?"}).`, err.status);
+    // Connection errors and timeouts have no status; name them instead.
+    const what = err.status ? `HTTP ${err.status}` : err.constructor.name;
+    return new LLMError("upstream", `OpenRouter request failed (${what}).`, err.status);
   }
   return new LLMError("upstream", "OpenRouter request failed.");
 }

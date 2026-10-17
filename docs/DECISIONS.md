@@ -45,3 +45,23 @@ One line per decision or deviation from docs/SPEC.md.
 - Markdown is rendered by a small built-in renderer (components/Markdown.tsx) that emits only React text nodes, so there is no HTML injection and no extra dependency.
 - The page viewer reads page text in the browser through RLS (no extra route).
 - Temperature 0.3 for Ask answers (not specified in the spec).
+
+## Phase 3
+- Quiz logic lives in lib/quiz/next.ts (choose topic/level/format → generate → check pages → verify → save) and lib/quiz/grade.ts; browser-safe response types are in lib/quiz/types.ts.
+- Before calling the checker model, a deterministic check requires every key point, source page and original-statement page to be one of the pages actually shown to the generator (stricter than "within the course").
+- MCQ options are shuffled on the server after generation, so the answer isn't always "A".
+- Verification failure: up to 3 attempts per topic (first try + 2 regenerations with the checker's issues), then one other topic, then a friendly 422. New attempts stop after about 200 s; /api/quiz/next has maxDuration = 300.
+- verification_failed events log only the format, attempt number, failed check names and an issue count, never the issue text (it can quote notes).
+- Comeback questions are derived from the topic's latest attempt (missed key points + its format), so no extra column is needed. The comeback format is deterministic (lib/quiz/formats.ts → comebackFormat), so the feedback card's "🔁 This will come back as…" line matches what /api/quiz/next does. If the student forces a format that differs from the missed one, it is kept.
+- Choosing a specific format sets the question's level to that format's level. Only questions at the topic's target level (mastery_level + 1) count toward levelling up.
+- "Review my weak spots" = danger-zone topics plus topics whose latest attempt wasn't correct, in review order; if there are none, it falls back to "Mix it up" order. Mix/weak avoid the topic just asked when another is available.
+- Pre-fetching: while the student answers, the browser requests the next question. It is discarded if the student just missed points or levelled up on that topic (it would be stale), and a fresh one is requested.
+- Grading: an mcq attempt stores the chosen option's text as the answer. Free-text answers that trigger the self-harm keyword check show the wellbeing card instead of being graded (no attempt is saved). Instruction-like answers are graded normally and logged as injection_flagged (source "answer", pattern names only).
+- The grader schema is rebuilt per question so key_point_results must have exactly one entry per key point. Hits are matched by position, and the score/verdict are computed in code.
+- A question can be answered once (409 after that).
+- After submitting, the model answer / correct option / original statement are revealed (allowed: the rule only forbids sending them before submission).
+- Progress page "session summary" = the 5 most recent attempts on the course (sessions aren't stored). The quiz screen shows its own end-of-round summary.
+- Danger zone clears when the 2 most recent attempts on the topic are both correct.
+- LLM speed: MODEL_PROFESSOR/CHECKER resolve to a reasoning model, and OpenRouter provider speed varied from about 1 s to 80 s for the same prompt (default reasoning effort, slow provider), which caused 45 s timeouts. Every call now asks for low reasoning effort (dropped automatically if unsupported) and sends provider `sort: "throughput"`. data_collection: "deny" and require_parameters are unchanged.
+- Grader output strings have no schema length limits; they are trimmed in code (evidence 300, mixed_up_with 120, feedback 600 chars) so a long sentence doesn't fail the whole grade.
+- callJSON logs which validation rule failed (paths and constraints only, never content) when the output is invalid twice.

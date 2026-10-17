@@ -133,17 +133,19 @@ export const VerifierSchema = z.object({
   issues: z.array(z.string().max(300)).max(10),
 });
 
+// No length limits here: long strings are trimmed by the grader code instead
+// of failing validation.
 export const GraderSchema = z.object({
   key_point_results: z.array(
     z.object({
       point: z.string(),
       hit: z.boolean(),
-      evidence: z.string().max(500),
+      evidence: z.string(),
     }),
   ),
   mistake_type: MistakeType,
-  mixed_up_with: z.string().max(120).nullable(),
-  feedback: z.string().max(600),
+  mixed_up_with: z.string().nullable(),
+  feedback: z.string(),
   grader_confidence: z.enum(["high", "low"]),
 });
 

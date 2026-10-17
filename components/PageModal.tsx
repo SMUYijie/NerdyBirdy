@@ -5,15 +5,20 @@ import { createClient } from "@/lib/supabase/client";
 
 export function PageModal({
   courseId,
-  page,
+  page: initialPage,
+  range,
   onClose,
 }: {
   courseId: string;
   page: number;
+  /** Optional [first, last] page range to step through with prev/next. */
+  range?: [number, number];
   onClose: () => void;
 }) {
-  const [text, setText] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [page, setPage] = useState(initialPage);
+  const [loaded, setLoaded] = useState<{ page: number; text: string | null; failed: boolean } | null>(null);
+  const text = loaded?.page === page ? loaded.text : null;
+  const failed = loaded?.page === page ? loaded.failed : false;
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -26,8 +31,7 @@ export function PageModal({
       .maybeSingle()
       .then(({ data, error }) => {
         if (!active) return;
-        if (error || !data) setFailed(true);
-        else setText(data.text as string);
+        setLoaded({ page, text: error || !data ? null : (data.text as string), failed: !!error || !data });
       });
     return () => {
       active = false;
@@ -66,6 +70,27 @@ export function PageModal({
             ✕
           </button>
         </div>
+        {range && range[1] > range[0] && (
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-sm">
+            <button
+              onClick={() => setPage((p) => Math.max(range[0], p - 1))}
+              disabled={page <= range[0]}
+              className="rounded-lg px-2 py-1 font-medium text-indigo-800 hover:bg-indigo-50 disabled:opacity-40"
+            >
+              ← Previous
+            </button>
+            <span className="text-slate-600">
+              Pages {range[0]}–{range[1]}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(range[1], p + 1))}
+              disabled={page >= range[1]}
+              className="rounded-lg px-2 py-1 font-medium text-indigo-800 hover:bg-indigo-50 disabled:opacity-40"
+            >
+              Next →
+            </button>
+          </div>
+        )}
         <div className="overflow-y-auto px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-slate-800">
           {failed
             ? "We couldn't load this page."

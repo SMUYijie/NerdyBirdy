@@ -88,23 +88,22 @@ async function main() {
       maxTokens: 50,
     });
     if (!out.ok) throw new SetupError("model replied ok=false");
-    const v = getResolvedVariants()[`${models.professor()}|-`];
-    return v ? `mode: ${v.mode}` : "";
+    const v = getResolvedVariants()[models.professor()];
+    return v ? `mode: ${v.mode}${v.reasoning ? " + reasoning low" : ", reasoning param not supported"}` : "";
   });
 
-  await check("OpenRouter chat, low reasoning (MODEL_CHECKER)", async () => {
+  await check("OpenRouter chat (MODEL_CHECKER)", async () => {
     const out = await callJSON({
       model: models.checker(),
       system: "You are a health check. Reply with JSON.",
       user: 'Reply with {"ok": true}.',
       schema: PingSchema,
       temperature: 0,
-      reasoningLow: true,
       name: "ping",
       maxTokens: 300,
     });
     if (!out.ok) throw new SetupError("model replied ok=false");
-    const v = getResolvedVariants()[`${models.checker()}|r`];
+    const v = getResolvedVariants()[models.checker()];
     return v ? `mode: ${v.mode}${v.reasoning ? " + reasoning low" : ", reasoning param not supported"}` : "";
   });
 
