@@ -68,3 +68,10 @@ export function scanForInjection(text: string): ScanResult {
   const patterns = PATTERNS.filter((p) => p.re.test(text)).map((p) => p.id);
   return { flagged: patterns.length > 0, patterns };
 }
+
+export function wrapConversation(history: { role: "user" | "assistant"; content: string }[]): string {
+  const body = history
+    .map((m) => `${m.role === "user" ? "Student" : "NerdyBirdy"}: ${neutralizeDelimiters(m.content)}`)
+    .join("\n");
+  return `<untrusted_conversation>\n${body}\n</untrusted_conversation>`;
+}

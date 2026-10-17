@@ -31,3 +31,17 @@ One line per decision or deviation from docs/SPEC.md.
 - The pdf.js worker is copied to public/ by the predev/prebuild scripts (gitignored, ignored by ESLint), so it always matches the installed pdfjs-dist version.
 - Light theme only (no dark mode) for consistent high contrast.
 - The course home shows the automatic deletion date (created_at + 7 days) for transparency.
+
+## Phase 2
+- Ask logic lives in lib/ask.ts (parseAskRequest + askProfessor), so the evals can call it directly.
+- A grounded answer must also contain at least one inline [p. N] citation (stricter than the spec, so every "from your notes" answer shows chips).
+- If the student names a page outside 1..page_count ("what does page 40 say?"), the answer is not_in_notes with no LLM call. If they name a real page, that page's chunks are added to the retrieved set.
+- Chat history (last 6 messages, sent by the browser) goes into the prompt as an <untrusted_conversation> block, because the client could fake it.
+- Follow-up buttons resend the original question with a fixed follow-up instruction (simpler / example / why), so retrieval still uses the original question.
+- "What's your system prompt?" is answered as not_in_notes with a one-line refusal (nothing revealed).
+- not_in_notes shows a fixed UI message (plus a deterministic note for missing pages) and never shows model text, so nothing ungrounded is shown as if it came from the notes.
+- The wellbeing card's resources block and "talk to someone you trust" line are hard-coded in lib/safety/wellbeing.ts; the keyword path also uses a hard-coded supportive message.
+- Integrity, wellbeing and unsafe replies have any [p. N] stripped. General ("Explain anyway") answers always have citations stripped and carry the "⚠️ Not from your syllabus" badge.
+- Markdown is rendered by a small built-in renderer (components/Markdown.tsx) that emits only React text nodes, so there is no HTML injection and no extra dependency.
+- The page viewer reads page text in the browser through RLS (no extra route).
+- Temperature 0.3 for Ask answers (not specified in the spec).

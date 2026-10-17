@@ -59,6 +59,7 @@ export const AskStatus = z.enum([
   "wellbeing_support",
   "unsafe_request",
 ]);
+export type AskStatus = z.infer<typeof AskStatus>;
 
 export const AskResponseSchema = z.object({
   status: AskStatus,
