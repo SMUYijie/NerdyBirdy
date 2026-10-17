@@ -10,7 +10,8 @@
     "check-setup": "tsx --conditions=react-server --env-file=.env.local scripts/check-setup.ts",
     "copy-pdf-worker": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\"",
     "predev": "npm run copy-pdf-worker",
-    "prebuild": "npm run copy-pdf-worker"
+    "prebuild": "npm run copy-pdf-worker",
+    "evals": "tsx --conditions=react-server --env-file=.env.local evals/run-evals.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

@@ -65,3 +65,12 @@ One line per decision or deviation from docs/SPEC.md.
 - LLM speed: MODEL_PROFESSOR/CHECKER resolve to a reasoning model, and OpenRouter provider speed varied from about 1 s to 80 s for the same prompt (default reasoning effort, slow provider), which caused 45 s timeouts. Every call now asks for low reasoning effort (dropped automatically if unsupported) and sends provider `sort: "throughput"`. data_collection: "deny" and require_parameters are unchanged.
 - Grader output strings have no schema length limits; they are trimmed in code (evidence 300, mixed_up_with 120, feedback 600 chars) so a long sentence doesn't fail the whole grade.
 - callJSON logs which validation rule failed (paths and constraints only, never content) when the output is invalid twice.
+
+## Phase 4
+- Evals (evals/cases.ts + evals/run-evals.ts, `npm run evals`) call lib functions directly with two real anonymous users. Grading cases use hand-written questions with fixed answer keys from the sample notes, so their setup is deterministic and only the grading is model-dependent. Case 23 generates a real question. `npm run evals -- 7 9` runs selected cases without rewriting the report.
+- Evals run 4 cases at a time (about 45 s total). Test users are deleted at the end, which cascades all their rows; their usage counters are removed too.
+- docs/safety-tests.md lists no model IDs (they are .env.local values); the README will list them once they're pinned.
+- Cron runs daily at 19:00 UTC (03:00 SGT). Besides the keep-alive query and deleting courses older than 7 days, it trims usage rows and safety_events older than 30 days (they hold no note/answer text, so 30 days is enough for review). The CRON_SECRET check uses a constant-time comparison.
+- vercel.json also pins functions to `sin1` (matches the Supabase region), in addition to the dashboard setting.
+- Added basic security headers (nosniff, DENY framing, strict referrer, no camera/mic/geo) in next.config.ts.
+- Known, accepted: RLS lets a user write their own topics/attempts/questions directly from the browser. That can only change their own progress, and answer keys stay unreachable (question_keys has no grants).
