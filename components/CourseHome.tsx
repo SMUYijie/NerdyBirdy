@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { PageModal } from "@/components/PageModal";
 import { InjectionBanner } from "@/components/SafetyCards";
 import { TopicMastery, type TopicRow } from "@/components/TopicMastery";
 import { createClient } from "@/lib/supabase/client";
@@ -48,6 +49,7 @@ export function CourseHome() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
+  const [openRange, setOpenRange] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     if (session !== "ready") return;
@@ -151,7 +153,11 @@ export function CourseHome() {
             and upload your notes again.
           </p>
         ) : (
-          <TopicMastery topics={topics} />
+          <TopicMastery
+            topics={topics}
+            onOpenRange={(t) => setOpenRange([t.page_start, t.page_end])}
+            quizHref={(t) => `${base}/quiz?topic=${t.id}`}
+          />
         )}
       </section>
 
@@ -195,6 +201,10 @@ export function CourseHome() {
           </div>
         )}
       </section>
+
+      {openRange && (
+        <PageModal courseId={course.id} page={openRange[0]} range={openRange} onClose={() => setOpenRange(null)} />
+      )}
     </div>
   );
 }

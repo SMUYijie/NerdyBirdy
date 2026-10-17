@@ -41,7 +41,11 @@ export function QuizClient() {
   const session = useSession();
   const [course, setCourse] = useState<{ name: string; flagged_pages: number[] } | null | "missing" | "error">(null);
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [topicChoice, setTopicChoice] = useState<TopicChoice>(search.get("topic") === "weak" ? "weak" : "mix");
+  const [topicChoice, setTopicChoice] = useState<TopicChoice>(() => {
+    const t = search.get("topic");
+    if (t === "weak") return "weak";
+    return t && /^[0-9a-f-]{36}$/i.test(t) ? t : "mix";
+  });
   const [formatChoice, setFormatChoice] = useState<FormatChoice>("surprise");
   const [phase, setPhase] = useState<Phase>({ kind: "setup" });
   const [draft, setDraft] = useState<AnswerDraft>(emptyDraft);

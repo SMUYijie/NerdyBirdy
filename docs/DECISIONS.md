@@ -77,3 +77,11 @@ One line per decision or deviation from docs/SPEC.md.
 
 ## Fixes
 - PDF upload: pdfjs-dist 6.x's default build uses brand-new JS APIs (Uint8Array.prototype.toHex, Map.prototype.getOrInsertComputed, Math.sumPrecise) that current Chrome/V8 lacks, so opening any PDF failed. We now import `pdfjs-dist/legacy/build/pdf.mjs` and serve the legacy worker (includes polyfills). PDF errors now say whether the file is password-protected, invalid, or unreadable in this browser.
+
+## Phase 6
+- Phase 5 (should-haves) was skipped: the user asked to finish and ship instead.
+- Topic cards (course home + progress) now have "📄 Read p. x–y" (page viewer with prev/next) and "🎯 Quiz this topic" (`/quiz?topic=<id>` preselects it).
+- PDF byte pre-check before pdf.js: empty files, HTML pages saved as .pdf, and Office/zip files get specific messages instead of a generic "invalid PDF".
+- Added app/not-found.tsx and app/error.tsx (friendly 404 and error boundary), and `overflow-wrap:anywhere` on <main> so long words/URLs don't cause horizontal scroll at 375 px.
+- README model IDs: `~deepseek/deepseek-flash-latest` resolved to `deepseek/deepseek-v4.1-flash` for every call during development and evals; that ID was verified directly (strict JSON + low reasoning + data_collection deny). Embeddings: openai/text-embedding-3-small (1536).
+- LICENSE: MIT, copyright holder "SMUYijie" (the GitHub account).

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CORRECT_TO_LEVEL_UP, levelLabel, pageRange } from "@/lib/mastery";
 
 export type TopicRow = {
@@ -15,10 +16,13 @@ export function TopicMastery({
   topics,
   showProgress,
   onOpenRange,
+  quizHref,
 }: {
   topics: TopicRow[];
   showProgress?: boolean;
   onOpenRange?: (t: TopicRow) => void;
+  /** When set, each topic gets a "Quiz this topic" link. */
+  quizHref?: (t: TopicRow) => string;
 }) {
   return (
     <ul className="space-y-2">
@@ -62,16 +66,26 @@ export function TopicMastery({
               </p>
             </div>
           )}
-          {onOpenRange ? (
-            <button
-              onClick={() => onOpenRange(t)}
-              className="mt-1 text-xs font-medium text-indigo-800 underline"
-            >
-              📄 {pageRange(t.page_start, t.page_end)}
-            </button>
-          ) : (
-            <p className="mt-1 text-xs text-slate-500">📄 {pageRange(t.page_start, t.page_end)}</p>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {onOpenRange ? (
+              <button
+                onClick={() => onOpenRange(t)}
+                className="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-800 hover:bg-indigo-200"
+              >
+                📄 Read {pageRange(t.page_start, t.page_end)}
+              </button>
+            ) : (
+              <span className="text-slate-500">📄 {pageRange(t.page_start, t.page_end)}</span>
+            )}
+            {quizHref && (
+              <Link
+                href={quizHref(t)}
+                className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-900 hover:bg-emerald-200"
+              >
+                🎯 Quiz this topic
+              </Link>
+            )}
+          </div>
         </li>
       ))}
     </ul>

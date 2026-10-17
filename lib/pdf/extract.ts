@@ -16,7 +16,11 @@ export async function extractPdfPages(
   // Copied from node_modules into /public by the predev/prebuild scripts.
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const problem = checkPdfBytes(bytes);
+  if (problem) throw new PdfError(problem);
+
+  const task = pdfjs.getDocument({ data: bytes });
   let doc;
   try {
     doc = await task.promise;
@@ -55,4 +59,21 @@ export async function extractPdfPages(
   } finally {
     await task.destroy();
   }
+}
+
+// Cheap checks before pdf.js, so a mislabelled file gets a clear message.
+// A PDF must contain "%PDF-" near the start (the spec allows up to 1 KB of junk).
+export function checkPdfBytes(bytes: Uint8Array): string | null {
+  if (bytes.length === 0) {
+    return "That file is empty. If it lives in iCloud or OneDrive, download it to your computer first.";
+  }
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
+  if (head.includes("%PDF-")) return null;
+  if (/<!doctype html|<html/i.test(head)) {
+    return "That file is actually a web page saved with a .pdf name (often a login page from a course portal). Download the PDF again from the portal, or open it in your browser and use Print → Save as PDF.";
+  }
+  if (head.startsWith("PK")) {
+    return "That file is a Word/PowerPoint/zip file, not a PDF. Export it as a PDF first (File → Export → PDF).";
+  }
+  return "That file doesn't look like a PDF. Open it and use File → Export as PDF (or Print → Save as PDF), then upload the new copy.";
 }

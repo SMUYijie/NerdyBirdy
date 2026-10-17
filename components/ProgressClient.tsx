@@ -195,7 +195,12 @@ export function ProgressClient() {
 
       <section>
         <h2 className="mb-2 font-semibold text-slate-900">🗺️ All topics</h2>
-        <TopicMastery topics={topics} showProgress onOpenRange={(t) => setOpenRange([t.page_start, t.page_end])} />
+        <TopicMastery
+          topics={topics}
+          showProgress
+          onOpenRange={(t) => setOpenRange([t.page_start, t.page_end])}
+          quizHref={(t) => `${base}/quiz?topic=${t.id}`}
+        />
       </section>
 
       {openRange && (
