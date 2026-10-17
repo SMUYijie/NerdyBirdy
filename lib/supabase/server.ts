@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // User-scoped server client (publishable key + the user's session cookie),
 // so RLS applies. Create a new one per request; never share across requests.
@@ -28,4 +29,21 @@ export async function createClient() {
       },
     },
   );
+}
+
+export type UserContext = { supabase: SupabaseClient; userId: string };
+
+// For route handlers: the user-scoped client plus the verified user id, or a
+// 401 response if there is no session.
+export async function requireUser(): Promise<UserContext | Response> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const userId = data?.claims?.sub;
+  if (error || !userId) {
+    return Response.json(
+      { error: "Your session has expired. Please refresh the page." },
+      { status: 401 },
+    );
+  }
+  return { supabase, userId };
 }
