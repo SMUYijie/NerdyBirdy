@@ -435,9 +435,9 @@ function QuizSession({ initialTopic }: { initialTopic: string | null }) {
               >
                 Next question →
               </button>
-              <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
                 {nextReady ? "✅ Your next question is ready" : <Loading message="Preparing your next question…" />}
-              </p>
+              </div>
             </div>
           )}
         </>

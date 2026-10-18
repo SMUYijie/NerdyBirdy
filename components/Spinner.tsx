@@ -14,10 +14,10 @@ export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
 // Inline "spinner + message" for any wait.
 export function Loading({ message, className = "" }: { message: string; className?: string }) {
   return (
-    <p role="status" className={`flex items-center gap-2 text-sm text-slate-600 ${className}`}>
+    <div role="status" className={`flex items-center gap-2 text-sm text-slate-600 ${className}`}>
       <Spinner />
       <span>{message}</span>
-    </p>
+    </div>
   );
 }
 
