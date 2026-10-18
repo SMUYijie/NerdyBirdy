@@ -11,6 +11,7 @@ import {
 } from "@/components/ChatMessage";
 import { PageModal } from "@/components/PageModal";
 import { InjectionBanner } from "@/components/SafetyCards";
+import { Loading } from "@/components/Spinner";
 import { LIMITS } from "@/lib/ai/schemas";
 import { postJSON } from "@/lib/api-client";
 import { createClient } from "@/lib/supabase/client";
@@ -162,11 +163,7 @@ export function AskClient() {
             onRetry={(label, body) => void send(label, body)}
           />
         ))}
-        {busy && (
-          <p className="text-sm text-slate-500" role="status">
-            🦉 The professor is flipping through your notes…
-          </p>
-        )}
+        {busy && <Loading message="The professor is flipping through your notes…" />}
         <div ref={bottomRef} />
       </div>
 

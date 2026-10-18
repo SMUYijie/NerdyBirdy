@@ -85,3 +85,10 @@ One line per decision or deviation from docs/SPEC.md.
 - Added app/not-found.tsx and app/error.tsx (friendly 404 and error boundary), and `overflow-wrap:anywhere` on <main> so long words/URLs don't cause horizontal scroll at 375 px.
 - README model IDs: `~deepseek/deepseek-flash-latest` resolved to `deepseek/deepseek-v4.1-flash` for every call during development and evals; that ID was verified directly (strict JSON + low reasoning + data_collection deny). Embeddings: openai/text-embedding-3-small (1536).
 - LICENSE: MIT, copyright holder "SMUYijie" (the GitHub account).
+
+## Post-launch improvements (user feedback)
+- Quiz waits: the browser keeps up to 2 verified questions ready ahead, generated one at a time (so each new question sees the previous ones and doesn't repeat them). Questions are no longer discarded after a miss; instead a comeback question for that topic is generated in the background and inserted after the next ready question. Deviation: the comeback can arrive one question later than "the next question on that topic", in exchange for no waiting.
+- Fresh quiz on every entry: Next 16 keeps visited pages alive with React Activity, so the old round reappeared. The quiz is keyed by `useRouter().bfcacheId` + the search params (bfcacheId alone doesn't change for ?topic= changes). Added an "End quiz" button (summary if anything was answered).
+- Loading: a shared Spinner/Loading/LoadingCard (components/Spinner.tsx) on every wait, with rotating status messages for long waits.
+- Study notes: /api/topic-notes generates clean per-chapter notes (sections, key terms, watch-outs) from that chapter's pages only. Points whose pages weren't shown are dropped (grounding), output is zod-validated, and the call counts toward the daily limit. They're cached in topics.study_notes (migration 0002); if the column doesn't exist yet, notes are generated without caching.
+- Course home = study hub (action tiles + numbered chapter list with 📘 Notes / 🎯 Quiz). Progress = analytics (mastery %, level breakdown, confidence calibration, per-chapter accuracy, recent answers).

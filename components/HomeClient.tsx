@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Spinner } from "@/components/Spinner";
 import { UploadDropzone } from "@/components/UploadDropzone";
 import { LIMITS } from "@/lib/ai/schemas";
 import { createClient } from "@/lib/supabase/client";
@@ -197,14 +198,19 @@ export function HomeClient() {
               return (
                 <li
                   key={step}
-                  className={
+                  className={`flex items-center gap-2 ${
                     state === "todo"
                       ? "text-slate-400"
                       : state === "active"
                         ? "font-semibold text-indigo-900"
                         : "text-slate-600"
-                  }
+                  }`}
                 >
+                  {state === "active" && step !== "ready" ? (
+                    <Spinner className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <span className="w-4 shrink-0 text-center text-xs">{state === "done" ? "✓" : "·"}</span>
+                  )}
                   {label}
                   {state === "active" && status.detail ? (
                     <span className="ml-2 font-normal text-slate-600">{status.detail}</span>
@@ -226,7 +232,9 @@ export function HomeClient() {
         {coursesError ? (
           <p className="mt-2 text-sm text-red-800">We couldn&apos;t load your courses. Please refresh.</p>
         ) : courses === null ? (
-          <p className="mt-2 text-sm text-slate-500">Loading…</p>
+          <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+            <Spinner className="h-4 w-4" /> Loading your courses…
+          </p>
         ) : courses.length === 0 ? (
           <p className="mt-2 text-sm text-slate-600">
             No courses yet. Upload a PDF or try the sample notes to get started.

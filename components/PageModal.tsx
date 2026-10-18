@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Loading } from "@/components/Spinner";
 import { createClient } from "@/lib/supabase/client";
 
 export function PageModal({
@@ -95,7 +96,7 @@ export function PageModal({
           {failed
             ? "We couldn't load this page."
             : text === null
-              ? "Loading…"
+              ? <Loading message="Loading page…" />
               : text.trim() || "This page has no readable text."}
         </div>
       </div>

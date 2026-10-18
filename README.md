@@ -36,7 +36,8 @@ NerdyBirdy turns a PDF of lecture notes into a personal, grounded tutor:
 ## 3. Key Features
 
 - 📄 **Upload any text PDF** (≤ 25 MB, ≤ 150 pages), or try the built-in sample notes. Scanned PDFs, password-protected files and mislabelled files get clear messages.
-- 🗺️ **Topic map** with levels, an exam countdown, and one-tap "Read p. 3–5" / "Quiz this topic".
+- 📚 **Course hub:** chapters (topic map) with levels, an exam countdown, and one-tap **📘 Notes** / **🎯 Quiz** per chapter.
+- 📘 **Study notes:** each chapter's messy slide text is rewritten into clean sections, key terms and "watch out for" traps. Every point carries a checked page citation that opens the original page. Notes are cached after the first time.
 - 💬 **Ask the Professor**
   - Answers with clickable **[p. N] citation chips** that open the page text.
   - Follow-ups: *Explain simpler*, *Give me an example*, *Why does this matter?*
@@ -49,7 +50,8 @@ NerdyBirdy turns a PDF of lecture notes into a personal, grounded tutor:
   - 🔗 *Connect the Dots*
 - 🤔 **Confidence calibration:** students rate how sure they are before submitting. Being "very sure" but wrong flags the topic for review.
 - ✅ **Feedback card:** key points hit and missed, what went wrong, which page to re-read, and a promise that the idea will come back as a 🔁 *comeback question* in a different format.
-- 📈 **Progress page:** topic levels, danger zones, a "review next" list with page ranges, and a session summary.
+- ⚡ **No waiting between questions:** up to 2 verified questions are prepared in the background while you answer, and comeback questions are slotted in automatically. **End quiz** finishes a round early with a summary.
+- 📈 **Progress analytics:** course mastery %, a level breakdown, a confidence-vs-results calibration chart, per-chapter accuracy, recent answers, the last session, and a "review next" list with page ranges.
 - 🛡️ **Safety cards** for academic-integrity boundaries, wellbeing support (with hard-coded Singapore helplines) and unsafe requests.
 - 🔒 **Privacy by default:** no login (anonymous sessions), no PDF stored, and everything is deleted automatically after 7 days or immediately on request.
 
@@ -135,7 +137,7 @@ Design choices that make the AI trustworthy:
    - Add your OpenRouter API key.
    - Set the model IDs from section 5.
    - Generate `CRON_SECRET` with `openssl rand -hex 32`.
-3. **Create the database:** open Supabase → **SQL Editor** → **New query**, paste `supabase/migrations/0001_init.sql`, and click **Run**.
+3. **Create the database:** open Supabase → **SQL Editor** → **New query**, paste `supabase/migrations/0001_init.sql`, and click **Run**. Then do the same with `supabase/migrations/0002_study_notes.sql`.
 4. **Check the setup:**
    ```bash
    npm run check-setup

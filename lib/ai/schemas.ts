@@ -151,3 +151,21 @@ export const GraderSchema = z.object({
 
 // Tiny schema used by scripts/check-setup.ts.
 export const PingSchema = z.object({ ok: z.boolean() });
+
+// ---------- Study notes (per topic) ----------
+
+export const StudyNotesSchema = z.object({
+  overview: z.string(),
+  sections: z
+    .array(
+      z.object({
+        heading: z.string(),
+        points: z.array(z.object({ text: z.string(), pages: z.array(page).min(1) })).min(1).max(8),
+      }),
+    )
+    .min(1)
+    .max(6),
+  key_terms: z.array(z.object({ term: z.string(), meaning: z.string(), page })).max(10),
+  watch_out: z.array(z.object({ text: z.string(), page })).max(4),
+});
+export type StudyNotes = z.infer<typeof StudyNotesSchema>;

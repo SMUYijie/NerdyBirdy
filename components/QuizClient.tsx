@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackCard } from "@/components/FeedbackCard";
 import { PageModal } from "@/components/PageModal";
 import { QuestionCard, type AnswerDraft } from "@/components/QuestionCard";
 import { InjectionBanner, WellbeingCard } from "@/components/SafetyCards";
+import { Loading, LoadingCard } from "@/components/Spinner";
 import type { QuizFormat } from "@/lib/ai/schemas";
 import { postJSON } from "@/lib/api-client";
 import { levelLabel, pageRange } from "@/lib/mastery";
@@ -16,6 +17,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useSession } from "@/lib/supabase/use-session";
 
 const SESSION_LENGTH = 5;
+// How many questions to keep ready ahead of the current one.
+const READY_AHEAD = 2;
 
 type Topic = { id: string; name: string; page_start: number; page_end: number; mastery_level: number; danger_zone: boolean };
 type TopicChoice = "mix" | "weak" | string;
@@ -23,7 +26,7 @@ type FormatChoice = QuizFormat | "surprise";
 
 type Phase =
   | { kind: "setup" }
-  | { kind: "loading" }
+  | { kind: "waiting" }
   | { kind: "question"; q: PublicQuestion }
   | { kind: "grading"; q: PublicQuestion }
   | { kind: "feedback"; q: PublicQuestion; result: GradedResult }
@@ -35,24 +38,39 @@ type Answered = { topic: PublicQuestion["topic"]; verdict: GradedResult["verdict
 
 const emptyDraft: AnswerDraft = { option: null, text: "", confidence: null, hintShown: false };
 
+// Next.js keeps visited pages alive (React Activity), so without a key the
+// previous round would reappear. Reset on every link navigation and whenever
+// the ?topic= changes; browser back/forward still restores the round.
 export function QuizClient() {
-  const { id: courseId } = useParams<{ id: string }>();
+  const router = useRouter();
   const search = useSearchParams();
+  return <QuizSession key={`${router.bfcacheId}|${search.toString()}`} initialTopic={search.get("topic")} />;
+}
+
+function QuizSession({ initialTopic }: { initialTopic: string | null }) {
+  const { id: courseId } = useParams<{ id: string }>();
   const session = useSession();
   const [course, setCourse] = useState<{ name: string; flagged_pages: number[] } | null | "missing" | "error">(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicChoice, setTopicChoice] = useState<TopicChoice>(() => {
-    const t = search.get("topic");
-    if (t === "weak") return "weak";
-    return t && /^[0-9a-f-]{36}$/i.test(t) ? t : "mix";
+    if (initialTopic === "weak") return "weak";
+    return initialTopic && /^[0-9a-f-]{36}$/i.test(initialTopic) ? initialTopic : "mix";
   });
   const [formatChoice, setFormatChoice] = useState<FormatChoice>("surprise");
   const [phase, setPhase] = useState<Phase>({ kind: "setup" });
   const [draft, setDraft] = useState<AnswerDraft>(emptyDraft);
   const [answered, setAnswered] = useState<Answered[]>([]);
   const [openPage, setOpenPage] = useState<{ page: number; range?: [number, number] } | null>(null);
-  const prefetch = useRef<Promise<PublicQuestion | null> | null>(null);
-  const lastResult = useRef<GradedResult | null>(null);
+  const [readyCount, setReadyCount] = useState(0); // mirrors queue length for rendering
+
+  // Question pipeline (mutable; survives re-renders).
+  const queue = useRef<PublicQuestion[]>([]);
+  const inflight = useRef(0);
+  const generating = useRef(false);
+  const waiting = useRef(false);
+  const round = useRef(0);
+  const current = useRef<PublicQuestion | null>(null);
+  const answeredCount = useRef(0);
 
   useEffect(() => {
     if (session !== "ready") return;
@@ -74,46 +92,121 @@ export function QuizClient() {
     });
   }, [session, courseId]);
 
-  function requestNext(avoidTopicIds: string[]): Promise<PublicQuestion> {
-    return postJSON<PublicQuestion>("/api/quiz/next", {
-      courseId,
-      topic: topicChoice,
-      format: formatChoice,
-      avoidTopicIds,
-    });
+  const refresh = () => setReadyCount(queue.current.length);
+  const planned = () => answeredCount.current + (current.current ? 1 : 0) + queue.current.length + inflight.current;
+  const mixed = topicChoice === "mix" || topicChoice === "weak";
+
+  function requestNext(topic: string, avoidTopicIds: string[]): Promise<PublicQuestion> {
+    return postJSON<PublicQuestion>("/api/quiz/next", { courseId, topic, format: formatChoice, avoidTopicIds });
   }
 
-  // Pre-generate the next question while the student answers this one.
-  function startPrefetch(current: PublicQuestion) {
-    const avoid = topicChoice === "mix" || topicChoice === "weak" ? [current.topic.id] : [];
-    prefetch.current = requestNext(avoid).catch(() => null);
-  }
-
-  async function loadQuestion(usePrefetch: boolean) {
-    setPhase({ kind: "loading" });
+  function show(q: PublicQuestion) {
+    current.current = q;
+    waiting.current = false;
     setDraft(emptyDraft);
-    try {
-      let q: PublicQuestion | null = null;
-      if (usePrefetch && prefetch.current) {
-        q = await prefetch.current;
-        const last = lastResult.current;
-        // A miss or level-up on the same topic makes the prefetched question
-        // stale (comeback questions must target the missed points).
-        if (q && last && q.topic.id === last.mastery.topic_id && (last.hits < last.total || last.mastery.leveled_up)) {
-          q = null;
+    setPhase({ kind: "question", q });
+    pump();
+  }
+
+  function enqueue(q: PublicQuestion, at?: number) {
+    if (at === undefined) queue.current.push(q);
+    else queue.current.splice(Math.min(at, queue.current.length), 0, q);
+    if (waiting.current) show(queue.current.shift()!);
+    refresh();
+  }
+
+  // Keep up to READY_AHEAD questions ready, one generation at a time (so new
+  // questions can see the previous ones and don't repeat them).
+  function pump() {
+    if (generating.current || queue.current.length >= READY_AHEAD || planned() >= SESSION_LENGTH) return;
+    const r = round.current;
+    generating.current = true;
+    inflight.current++;
+    refresh();
+    const avoid = mixed
+      ? [current.current?.topic.id, ...queue.current.map((q) => q.topic.id)].filter((x): x is string => !!x)
+      : [];
+    requestNext(topicChoice, avoid).then(
+      (q) => {
+        if (r !== round.current) return;
+        generating.current = false;
+        inflight.current--;
+        enqueue(q);
+        pump();
+      },
+      (err) => {
+        if (r !== round.current) return;
+        generating.current = false;
+        inflight.current--;
+        refresh();
+        // Only interrupt the student if they're actually waiting for it.
+        if (waiting.current && queue.current.length === 0 && inflight.current === 0) {
+          setPhase({ kind: "error", message: err instanceof Error ? err.message : "Something went wrong.", retry: "next" });
         }
-      }
-      prefetch.current = null;
-      if (!q) q = await requestNext(answered.slice(-1).map((a) => a.topic.id));
-      setPhase({ kind: "question", q });
-      startPrefetch(q);
-    } catch (err) {
-      setPhase({
-        kind: "error",
-        message: err instanceof Error ? err.message : "Something went wrong.",
-        retry: "next",
-      });
+      },
+    );
+  }
+
+  // A missed answer brings that topic back in a different format. It's
+  // generated in the background and slotted in after the next ready question.
+  function requestComeback(topicId: string) {
+    if (answeredCount.current >= SESSION_LENGTH) return;
+    if (planned() >= SESSION_LENGTH) {
+      if (queue.current.length > 1) queue.current.pop();
+      else return;
     }
+    const r = round.current;
+    inflight.current++;
+    requestNext(topicId, []).then(
+      (q) => {
+        if (r !== round.current) return;
+        inflight.current--;
+        enqueue(q, 1);
+      },
+      () => {
+        if (r !== round.current) return;
+        inflight.current--;
+        pump();
+      },
+    );
+  }
+
+  function next() {
+    current.current = null;
+    if (answeredCount.current >= SESSION_LENGTH) {
+      setPhase({ kind: "summary" });
+      return;
+    }
+    const q = queue.current.shift();
+    if (q) {
+      show(q);
+    } else {
+      waiting.current = true;
+      setPhase({ kind: "waiting" });
+      pump();
+    }
+    refresh();
+  }
+
+  function startRound() {
+    round.current++;
+    queue.current = [];
+    inflight.current = 0;
+    generating.current = false;
+    current.current = null;
+    answeredCount.current = 0;
+    setAnswered([]);
+    next();
+  }
+
+  function endRound() {
+    round.current++; // ignore anything still being generated
+    queue.current = [];
+    inflight.current = 0;
+    generating.current = false;
+    waiting.current = false;
+    current.current = null;
+    setPhase(answeredCount.current > 0 ? { kind: "summary" } : { kind: "setup" });
   }
 
   async function submit(q: PublicQuestion) {
@@ -130,7 +223,8 @@ export function QuizClient() {
         setPhase({ kind: "wellbeing", q, message: res.message });
         return;
       }
-      lastResult.current = res;
+      answeredCount.current += 1;
+      current.current = null; // now counted in answeredCount, not as "current"
       setAnswered((a) => [...a, { topic: q.topic, verdict: res.verdict }]);
       setTopics((ts) =>
         ts.map((t) =>
@@ -138,21 +232,10 @@ export function QuizClient() {
         ),
       );
       setPhase({ kind: "feedback", q, result: res });
+      if (res.hits < res.total) requestComeback(res.mastery.topic_id);
     } catch (err) {
-      setPhase({
-        kind: "error",
-        message: err instanceof Error ? err.message : "Something went wrong.",
-        retry: "grade",
-        q,
-      });
+      setPhase({ kind: "error", message: err instanceof Error ? err.message : "Something went wrong.", retry: "grade", q });
     }
-  }
-
-  function startSession() {
-    setAnswered([]);
-    lastResult.current = null;
-    prefetch.current = null;
-    void loadQuestion(false);
   }
 
   if (session === "error" || course === "error") {
@@ -175,7 +258,8 @@ export function QuizClient() {
 
   const base = `/course/${courseId}`;
   const done = answered.length;
-  const questionNumber = Math.min(done + 1, SESSION_LENGTH);
+  const inRound = phase.kind !== "setup" && phase.kind !== "summary";
+  const nextReady = readyCount > 0;
 
   return (
     <div className="space-y-4">
@@ -183,16 +267,51 @@ export function QuizClient() {
         <Link href={base} className="text-sm text-indigo-700 hover:underline">
           ← {course?.name ?? "Course"}
         </Link>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900">🎯 Quiz Mode</h1>
-        <p className="text-slate-700">Test yourself before the real exam does.</p>
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">🎯 Quiz Mode</h1>
+            <p className="text-slate-700">Test yourself before the real exam does.</p>
+          </div>
+          {inRound && (
+            <button
+              onClick={endRound}
+              className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              ⏹ End quiz
+            </button>
+          )}
+        </div>
         <p className="mt-1 text-sm text-slate-600">📚 Practice — at your own pace, hints on, no timer.</p>
       </div>
 
       {course && <InjectionBanner pages={course.flagged_pages ?? []} />}
 
+      {inRound && (
+        <div className="flex items-center gap-1" aria-label={`${done} of ${SESSION_LENGTH} answered`}>
+          {Array.from({ length: SESSION_LENGTH }).map((_, i) => (
+            <span
+              key={i}
+              className={`h-2 flex-1 rounded-full ${
+                i < done
+                  ? answered[i].verdict === "correct"
+                    ? "bg-emerald-500"
+                    : answered[i].verdict === "partial"
+                      ? "bg-amber-400"
+                      : "bg-rose-400"
+                  : i === done
+                    ? "bg-indigo-300"
+                    : "bg-slate-200"
+              }`}
+            />
+          ))}
+        </div>
+      )}
+
       {phase.kind === "setup" && (
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {topics.length === 0 && course ? (
+          {!course ? (
+            <Loading message="Loading your topics…" />
+          ) : topics.length === 0 ? (
             <p className="text-sm text-slate-700">This course has no topics yet, so there&apos;s nothing to quiz on.</p>
           ) : (
             <>
@@ -213,12 +332,10 @@ export function QuizClient() {
                   </label>
                   <select
                     id="topic-select"
-                    value={topicChoice === "mix" || topicChoice === "weak" ? "" : topicChoice}
+                    value={mixed ? "" : topicChoice}
                     onChange={(e) => e.target.value && setTopicChoice(e.target.value)}
                     className={`rounded-xl border px-3 py-2.5 text-sm ${
-                      topicChoice !== "mix" && topicChoice !== "weak"
-                        ? "border-indigo-600 bg-indigo-50 text-slate-900"
-                        : "border-slate-300 bg-white text-slate-700"
+                      !mixed ? "border-indigo-600 bg-indigo-50 text-slate-900" : "border-slate-300 bg-white text-slate-700"
                     }`}
                   >
                     <option value="">📖 Or pick one topic…</option>
@@ -251,8 +368,8 @@ export function QuizClient() {
               </fieldset>
 
               <button
-                onClick={startSession}
-                disabled={session !== "ready" || !course || topics.length === 0}
+                onClick={startRound}
+                disabled={session !== "ready"}
                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
               >
                 Start a {SESSION_LENGTH}-question round
@@ -262,20 +379,26 @@ export function QuizClient() {
         </div>
       )}
 
-      {phase.kind === "loading" && (
-        <div role="status" className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-700">
-          <p className="text-3xl" aria-hidden>
-            🦉
-          </p>
-          <p className="mt-2 font-medium">Writing question {questionNumber} and double-checking it against your notes…</p>
-          <p className="mt-1 text-slate-500">This can take up to half a minute.</p>
-        </div>
+      {phase.kind === "waiting" && (
+        <LoadingCard
+          messages={[
+            `Writing question ${done + 1}…`,
+            "Double-checking it against your notes…",
+            "Making sure there's exactly one right answer…",
+            "Almost ready…",
+          ]}
+          sub={
+            done === 0
+              ? "The first question takes up to half a minute. The next ones are prepared while you answer."
+              : "Preparing your next question…"
+          }
+        />
       )}
 
       {(phase.kind === "question" || phase.kind === "grading") && (
         <QuestionCard
           question={phase.q}
-          number={questionNumber}
+          number={done + 1}
           total={SESSION_LENGTH}
           draft={draft}
           onDraft={setDraft}
@@ -305,12 +428,17 @@ export function QuizClient() {
               See how you did →
             </button>
           ) : (
-            <button
-              onClick={() => void loadQuestion(true)}
-              className="w-full rounded-xl bg-indigo-700 px-4 py-3 font-semibold text-white hover:bg-indigo-800"
-            >
-              Next question →
-            </button>
+            <div className="space-y-1">
+              <button
+                onClick={next}
+                className="w-full rounded-xl bg-indigo-700 px-4 py-3 font-semibold text-white hover:bg-indigo-800"
+              >
+                Next question →
+              </button>
+              <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
+                {nextReady ? "✅ Your next question is ready" : <Loading message="Preparing your next question…" />}
+              </p>
+            </div>
           )}
         </>
       )}
@@ -331,7 +459,8 @@ export function QuizClient() {
         <SessionSummary
           answered={answered}
           onOpenRange={(t) => setOpenPage({ page: t.page_start, range: [t.page_start, t.page_end] })}
-          onAgain={startSession}
+          onAgain={startRound}
+          onChange={() => setPhase({ kind: "setup" })}
           progressHref={`${base}/progress`}
         />
       )}
@@ -341,20 +470,16 @@ export function QuizClient() {
           <p>{phase.message}</p>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() =>
-                phase.retry === "grade" && phase.q
-                  ? void submit(phase.q)
-                  : void loadQuestion(false)
-              }
+              onClick={() => (phase.retry === "grade" && phase.q ? void submit(phase.q) : next())}
               className="rounded-lg bg-red-700 px-3 py-1.5 font-semibold text-white hover:bg-red-800"
             >
               Try again
             </button>
             <button
-              onClick={() => setPhase({ kind: "setup" })}
+              onClick={endRound}
               className="rounded-lg border border-red-300 px-3 py-1.5 font-medium text-red-800 hover:bg-red-100"
             >
-              Change topic or type
+              End quiz
             </button>
           </div>
         </div>
@@ -394,15 +519,17 @@ function SessionSummary({
   answered,
   onOpenRange,
   onAgain,
+  onChange,
   progressHref,
 }: {
   answered: Answered[];
   onOpenRange: (t: PublicQuestion["topic"]) => void;
   onAgain: () => void;
+  onChange: () => void;
   progressHref: string;
 }) {
   const correct = answered.filter((a) => a.verdict === "correct").length;
-  // Focus on the topic with the most misses this session.
+  // Focus on the topic with the most misses this round.
   const misses = new Map<string, { topic: PublicQuestion["topic"]; n: number }>();
   for (const a of answered) {
     if (a.verdict === "correct") continue;
@@ -415,7 +542,7 @@ function SessionSummary({
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm">
       <p className="text-3xl" aria-hidden>
-        {correct === answered.length ? "🏆" : "🦉"}
+        {answered.length > 0 && correct === answered.length ? "🏆" : "🦉"}
       </p>
       <p className="text-lg font-bold">
         You answered {correct}/{answered.length} correctly.
@@ -428,9 +555,9 @@ function SessionSummary({
           </button>
           .
         </p>
-      ) : (
+      ) : answered.length > 0 ? (
         <p>Brilliant — every answer was spot on! 🎉</p>
-      )}
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={onAgain}
@@ -438,11 +565,17 @@ function SessionSummary({
         >
           Another round
         </button>
+        <button
+          onClick={onChange}
+          className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 font-semibold text-slate-800 hover:bg-slate-50"
+        >
+          Change topic or type
+        </button>
         <Link
           href={progressHref}
           className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-center font-semibold text-slate-800 hover:bg-slate-50"
         >
-          📈 See my progress
+          📈 My progress
         </Link>
       </div>
     </div>

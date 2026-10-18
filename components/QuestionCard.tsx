@@ -2,6 +2,7 @@
 
 import { ConfidencePicker, type ConfidenceValue } from "@/components/ConfidencePicker";
 import { Markdown } from "@/components/Markdown";
+import { Spinner } from "@/components/Spinner";
 import { LIMITS } from "@/lib/ai/schemas";
 import { levelLabel, pageRange } from "@/lib/mastery";
 import type { PublicQuestion } from "@/lib/quiz/types";
@@ -144,9 +145,10 @@ export function QuestionCard({
             type="button"
             onClick={onSubmit}
             disabled={submitting || !hasAnswer || !draft.confidence}
-            className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
           >
-            {submitting ? "🦉 Marking your answer against your notes…" : "Check my answer"}
+            {submitting && <Spinner className="h-5 w-5 text-white" />}
+            {submitting ? "Marking your answer against your notes…" : "Check my answer"}
           </button>
           {!submitting && hasAnswer && !draft.confidence && (
             <p className="text-center text-xs text-slate-500">Pick how sure you are to check your answer.</p>
